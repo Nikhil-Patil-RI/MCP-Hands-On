@@ -1,38 +1,24 @@
 import asyncio
-from typing import Optional
+from typing import Optional, Dict
 from contextlib import AsyncExitStack
 import os
 import sys
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
-
 from anthropic import Anthropic
 from dotenv import load_dotenv
 
 load_dotenv()  # load environment variables from .env
 
-
-# venv_path = "C:\\Users\\Hp\\Desktop\\Rapid_Innovation\\MCP\\weather\\venv"
-# os.environ["PATH"] = os.path.join(venv_path, "Scripts") + os.pathsep + os.environ["PATH"]
-
-# if sys.executable != os.path.join(venv_path, "Scripts", "python.exe"):
-#     sys.executable = os.path.join(venv_path, "Scripts", "python.exe")
-
-
 class MCPClient:
     def __init__(self):
-        # Initialize session and client objects
-        self.session: Optional[ClientSession] = None
+        # Dictionary to hold sessions for each connected server
+        self.sessions: Dict[str, ClientSession] = {}
         self.exit_stack = AsyncExitStack()
         self.anthropic = Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
-    # methods will go here
-
-    async def connect_to_server(self, server_script_path: str):
-        """Connect to an MCP server
-        
-        Args:
-            server_script_path: Path to the server script (.py or .js)
-        """
+    
+    async def connect_to_server(self, server_name: str, server_script_path: str):
+        """Connect to an MCP server and store session by server name."""
         is_python = server_script_path.endswith('.py')
         is_js = server_script_path.endswith('.js')
         if not (is_python or is_js):
@@ -46,27 +32,27 @@ class MCPClient:
         )
         
         stdio_transport = await self.exit_stack.enter_async_context(stdio_client(server_params))
-        self.stdio, self.write = stdio_transport
-        self.session = await self.exit_stack.enter_async_context(ClientSession(self.stdio, self.write))
+        stdio, write = stdio_transport
+        session = await self.exit_stack.enter_async_context(ClientSession(stdio, write))
+        await session.initialize()
+
+        # Store session by server name
+        self.sessions[server_name] = session
         
-        await self.session.initialize()
-        
-        # List available tools
-        response = await self.session.list_tools()
+        # List available tools from this server
+        response = await session.list_tools()
         tools = response.tools
-        print("\nConnected to server with tools:", [tool.name for tool in tools])
+        print(f"\nConnected to {server_name} with tools:", [tool.name for tool in tools])
+        
+    async def process_query(self, server_name: str, query: str) -> str:
+        """Process a query for a specific server using Claude and available tools."""
+        session = self.sessions.get(server_name)
+        if not session:
+            return f"Server '{server_name}' is not connected."
 
-
-    async def process_query(self, query: str) -> str:
-        """Process a query using Claude and available tools"""
-        messages = [
-            {
-                "role": "user",
-                "content": query
-            }
-        ]
-
-        response = await self.session.list_tools()
+        messages = [{"role": "user", "content": query}]
+        
+        response = await session.list_tools()
         available_tools = [{ 
             "name": tool.name,
             "description": tool.description,
@@ -93,7 +79,7 @@ class MCPClient:
                 tool_args = content.input
                 
                 # Execute tool call
-                result = await self.session.call_tool(tool_name, tool_args)
+                result = await session.call_tool(tool_name, tool_args)
                 tool_results.append({"call": tool_name, "result": result})
                 final_text.append(f"[Calling tool {tool_name} with args {tool_args}]")
 
@@ -118,48 +104,41 @@ class MCPClient:
                 final_text.append(response.content[0].text)
 
         return "\n".join(final_text)
-    
 
     async def chat_loop(self):
-        """Run an interactive chat loop"""
-        print("\nMCP Client Started!")
-        print("Type your queries or 'quit' to exit.")
+        """Run an interactive chat loop."""
+        print("\nMCP Client Started! Type your queries or 'quit' to exit.")
         
         while True:
             try:
                 query = input("\nQuery: ").strip()
-                
                 if query.lower() == 'quit':
                     break
-                    
-                response = await self.process_query(query)
+                
+                server_name = input("\nEnter the server name to query: ").strip()
+
+                response = await self.process_query(server_name, query)
                 print("\n" + response)
                     
             except Exception as e:
                 print(f"\nError: {str(e)}")
 
     async def cleanup(self):
-        """Clean up resources"""
+        """Clean up resources."""
         await self.exit_stack.aclose()
 
-
-
 async def main():
-    # if len(sys.argv) < 2:
-    #     print("Usage: python client.py <path_to_server_script>")
-    #     sys.exit(1)
-
-    # serverName = "C:\\Users\\Hp\\Github-Oauth\\src\\github_oauth\\server.py"
-    serverName= "github.py"
     client = MCPClient()
     try:
-        await client.connect_to_server(serverName)
+        # Connect to multiple servers
+        await client.connect_to_server("github_oauth_server", "github.py")
+        await client.connect_to_server("weather_server", "weather.py")
+
+        # Start the interactive chat loop
         await client.chat_loop()
+
     finally:
         await client.cleanup()
 
-
 if __name__ == "__main__":
-    import sys
     asyncio.run(main())
-
