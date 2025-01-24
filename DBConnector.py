@@ -26,7 +26,7 @@ load_dotenv()
 mcp = FastMCP("mongodb_connector")
 
 # MongoDB Configuration
-MONGO_URI = "mongodb+srv://npatil:92cplKkTFh2Kv8so@nestjs-crud.gg9ub.mongodb.net/?retryWrites=true&w=majority&appName=NestJS-CRUD"
+MONGO_URI = "YOUR MONGO DB URL"
 DATABASE_NAME = "test"
 COLLECTION_NAME = "books"
 
