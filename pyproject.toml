@@ -25,6 +25,7 @@ dependencies = [
     "pydantic-core==2.27.2",
     "pydantic-settings==2.7.1",
     "pygments==2.19.1",
+    "pymongo>=4.10.1",
     "python-dotenv==1.0.1",
     "rich==13.9.4",
     "shellingham==1.5.4",
